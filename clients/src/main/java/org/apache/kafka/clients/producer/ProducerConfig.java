@@ -56,6 +56,8 @@ public class ProducerConfig extends AbstractConfig {
      */
 
     private static final ConfigDef CONFIG;
+    public static final String MAX_BATCH_TIMESTAMP_DIFFERENCE_MS_CONFIG = "max.batch.timestamp.difference.ms";
+    public static final String MAX_BATCH_TIMESTAMP_DIFFERENCE_MS_DOC = "The maximum difference allowed between the timestamp of the first record in a batch and the timestamp of the last record in the batch. If the difference is greater than this value, the producer will throw an exception.";
 
     /** <code>bootstrap.servers</code> */
     public static final String BOOTSTRAP_SERVERS_CONFIG = CommonClientConfigs.BOOTSTRAP_SERVERS_CONFIG;
@@ -484,7 +486,13 @@ public class ProducerConfig extends AbstractConfig {
                                         null,
                                         new ConfigDef.NonEmptyString(),
                                         Importance.LOW,
-                                        TRANSACTIONAL_ID_DOC);
+                                        TRANSACTIONAL_ID_DOC)
+                .define(MAX_BATCH_TIMESTAMP_DIFFERENCE_MS_CONFIG,
+                        Type.LONG,
+                        java.time.Duration.ofHours(24).toMillis(),
+                        atLeast(0),
+                        Importance.LOW,
+                        MAX_BATCH_TIMESTAMP_DIFFERENCE_MS_DOC);
     }
 
     @Override

@@ -237,6 +237,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
     public static final String PRODUCER_METRIC_GROUP_NAME = "producer-metrics";
 
     private final String clientId;
+    private final long maxBatchTimestampDifferenceMs;
     // Visible for testing
     final Metrics metrics;
     private final KafkaProducerMetrics producerMetrics;
@@ -350,6 +351,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
             String transactionalId = config.getString(ProducerConfig.TRANSACTIONAL_ID_CONFIG);
 
             this.clientId = config.getString(ProducerConfig.CLIENT_ID_CONFIG);
+            this.maxBatchTimestampDifferenceMs = config.getLong(ProducerConfig.MAX_BATCH_TIMESTAMP_DIFFERENCE_MS_CONFIG);
 
             LogContext logContext;
             if (transactionalId == null)
@@ -434,7 +436,9 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
                     time,
                     apiVersions,
                     transactionManager,
-                    new BufferPool(this.totalMemorySize, batchSize, metrics, time, PRODUCER_METRIC_GROUP_NAME));
+                    new BufferPool(this.totalMemorySize, batchSize, metrics, time, PRODUCER_METRIC_GROUP_NAME),
+                    maxBatchTimestampDifferenceMs
+            );
 
             List<InetSocketAddress> addresses = ClientUtils.parseAndValidateAddresses(
                     config.getList(ProducerConfig.BOOTSTRAP_SERVERS_CONFIG),
@@ -502,6 +506,7 @@ public class KafkaProducer<K, V> implements Producer<K, V> {
         this.metadata = metadata;
         this.sender = sender;
         this.ioThread = ioThread;
+        this.maxBatchTimestampDifferenceMs = Long.MAX_VALUE;
     }
 
     // visible for testing

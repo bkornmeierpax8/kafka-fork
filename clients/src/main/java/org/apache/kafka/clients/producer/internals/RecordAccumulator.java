@@ -86,6 +86,7 @@ public class RecordAccumulator {
     private final Set<TopicPartition> muted;
     private final Map<String, Integer> nodesDrainIndex;
     private final TransactionManager transactionManager;
+    private final long maxBatchTimestampDifferenceMs;
     private long nextBatchExpiryTimeMs = Long.MAX_VALUE; // the earliest time (absolute) a batch will expire.
 
     /**
@@ -121,7 +122,8 @@ public class RecordAccumulator {
                              Time time,
                              ApiVersions apiVersions,
                              TransactionManager transactionManager,
-                             BufferPool bufferPool) {
+                             BufferPool bufferPool,
+                             long maxBatchTimestampDifferenceMs) {
         this.logContext = logContext;
         this.log = logContext.logger(RecordAccumulator.class);
         this.closed = false;
@@ -141,6 +143,7 @@ public class RecordAccumulator {
         this.apiVersions = apiVersions;
         nodesDrainIndex = new HashMap<>();
         this.transactionManager = transactionManager;
+        this.maxBatchTimestampDifferenceMs = maxBatchTimestampDifferenceMs;
         registerMetrics(metrics, metricGrpName);
     }
 
@@ -175,7 +178,8 @@ public class RecordAccumulator {
                              Time time,
                              ApiVersions apiVersions,
                              TransactionManager transactionManager,
-                             BufferPool bufferPool) {
+                             BufferPool bufferPool,
+                             long maxBatchTimestampDifferenceMs) {
         this(logContext,
             batchSize,
             compression,
@@ -188,7 +192,8 @@ public class RecordAccumulator {
             time,
             apiVersions,
             transactionManager,
-            bufferPool);
+            bufferPool,
+            maxBatchTimestampDifferenceMs);
     }
 
     private void registerMetrics(Metrics metrics, String metricGrpName) {
@@ -270,7 +275,7 @@ public class RecordAccumulator {
      * @param nowMs The current time, in milliseconds
      * @param cluster The cluster metadata
      */
-    public RecordAppendResult append(String topic,
+    public RecordAppendResult append(String topic, //HERE
                                      int partition,
                                      long timestamp,
                                      byte[] key,
@@ -308,13 +313,13 @@ public class RecordAccumulator {
                 // Now that we know the effective partition, let the caller know.
                 setPartition(callbacks, effectivePartition);
 
-                // check if we have an in-progress batch
+                // check a map of partition -> deque of batches to see if we have an in-progress batch
                 Deque<ProducerBatch> dq = topicInfo.batches.computeIfAbsent(effectivePartition, k -> new ArrayDeque<>());
                 synchronized (dq) {
                     // After taking the lock, validate that the partition hasn't changed and retry.
                     if (partitionChanged(topic, topicInfo, partitionInfo, dq, nowMs, cluster))
                         continue;
-
+                    // here we call tryAppened
                     RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callbacks, dq, nowMs);
                     if (appendResult != null) {
                         // If queue has incomplete batches we disable switch (see comments in updatePartitionInfo).
@@ -346,8 +351,8 @@ public class RecordAccumulator {
                     // After taking the lock, validate that the partition hasn't changed and retry.
                     if (partitionChanged(topic, topicInfo, partitionInfo, dq, nowMs, cluster))
                         continue;
-
-                    RecordAppendResult appendResult = appendNewBatch(topic, effectivePartition, dq, timestamp, key, value, headers, callbacks, buffer, nowMs);
+                    // here we call tryAppened as well
+                    RecordAppendResult appendResult = appendNewBatch(topic, effectivePartition, dq, timestamp, key, value, headers, callbacks, buffer, nowMs, this.maxBatchTimestampDifferenceMs);
                     // Set buffer to null, so that deallocate doesn't return it back to free pool, since it's used in the batch.
                     if (appendResult.newBatchCreated)
                         buffer = null;
@@ -386,7 +391,8 @@ public class RecordAccumulator {
                                               Header[] headers,
                                               AppendCallbacks callbacks,
                                               ByteBuffer buffer,
-                                              long nowMs) {
+                                              long nowMs,
+                                              long maxBatchTimestampDifferenceMs) {
         assert partition != RecordMetadata.UNKNOWN_PARTITION;
 
         RecordAppendResult appendResult = tryAppend(timestamp, key, value, headers, callbacks, dq, nowMs);
@@ -396,7 +402,7 @@ public class RecordAccumulator {
         }
 
         MemoryRecordsBuilder recordsBuilder = recordsBuilder(buffer, apiVersions.maxUsableProduceMagic());
-        ProducerBatch batch = new ProducerBatch(new TopicPartition(topic, partition), recordsBuilder, nowMs);
+        ProducerBatch batch = new ProducerBatch(new TopicPartition(topic, partition), recordsBuilder, nowMs, maxBatchTimestampDifferenceMs);
         FutureRecordMetadata future = Objects.requireNonNull(batch.tryAppend(timestamp, key, value, headers,
                 callbacks, nowMs));
 

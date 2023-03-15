@@ -62,6 +62,7 @@ public final class ProducerBatch {
     private enum FinalState { ABORTED, FAILED, SUCCEEDED }
 
     final long createdMs;
+
     final TopicPartition topicPartition;
     final ProduceRequestResult produceFuture;
 
@@ -76,20 +77,26 @@ public final class ProducerBatch {
     private long lastAttemptMs;
     private long lastAppendTime;
     private long drainedMs;
+    private long maxTimestamp;
+    private long minTimestamp;
+    private final long maxBatchTimestampDifferenceMs;
     private boolean retry;
     private boolean reopened;
 
-    public ProducerBatch(TopicPartition tp, MemoryRecordsBuilder recordsBuilder, long createdMs) {
-        this(tp, recordsBuilder, createdMs, false);
+    public ProducerBatch(TopicPartition tp, MemoryRecordsBuilder recordsBuilder, long createdMs, long maxBatchTimestampDifferenceMs) {
+        this(tp, recordsBuilder, createdMs, false, maxBatchTimestampDifferenceMs);
     }
 
-    public ProducerBatch(TopicPartition tp, MemoryRecordsBuilder recordsBuilder, long createdMs, boolean isSplitBatch) {
+    public ProducerBatch(TopicPartition tp, MemoryRecordsBuilder recordsBuilder, long createdMs, boolean isSplitBatch, long maxBatchTimestampDifferenceMs) {
         this.createdMs = createdMs;
         this.lastAttemptMs = createdMs;
         this.recordsBuilder = recordsBuilder;
         this.topicPartition = tp;
         this.lastAppendTime = createdMs;
         this.produceFuture = new ProduceRequestResult(topicPartition);
+        this.maxTimestamp  = RecordBatch.NO_TIMESTAMP;
+        this.minTimestamp = RecordBatch.NO_TIMESTAMP;
+        this.maxBatchTimestampDifferenceMs = maxBatchTimestampDifferenceMs;
         this.retry = false;
         this.isSplitBatch = isSplitBatch;
         float compressionRatioEstimation = CompressionRatioEstimator.estimation(topicPartition.topic(),
@@ -98,11 +105,31 @@ public final class ProducerBatch {
     }
 
     /**
+     * Given a timestamp, check if appending a record with this timestamp would exceed the maximum timestamp difference
+     * @param timestamp
+     * @return true if appending a record with this timestamp would exceed the maximum timestamp difference, false otherwise
+     */
+    private boolean wouldExceedMaxTimestampDelta(long timestamp) {
+        // We need to check the timestamp difference before appending the record to the batch, if the difference would be too large we return null, to start a new batch
+        maxTimestamp = Math.max(maxTimestamp, timestamp);
+        minTimestamp = minTimestamp == RecordBatch.NO_TIMESTAMP ? timestamp : Math.min(minTimestamp, timestamp);
+        final long timestampDelta = maxTimestamp - minTimestamp;
+        return timestampDelta >= maxBatchTimestampDifferenceMs;
+    }
+
+    /**
      * Append the record to the current record set and return the relative offset within that record set
      *
      * @return The RecordSend corresponding to this record or null if there isn't sufficient room.
      */
     public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Header[] headers, Callback callback, long now) {
+        // We need to check the timestamp difference before appending the record to the batch, if the difference would be too large we return null, to start a new batch
+        if(wouldExceedMaxTimestampDelta(timestamp)) {
+            log.info("maxBatchTimestampDifferenceMs {} ms would be exceeded, splitting batch",
+                    maxBatchTimestampDifferenceMs);
+            return null;
+        }
+
         if (!recordsBuilder.hasRoomFor(timestamp, key, value, headers)) {
             return null;
         } else {
@@ -128,6 +155,11 @@ public final class ProducerBatch {
      * @return true if the record has been successfully appended, false otherwise.
      */
     private boolean tryAppendForSplit(long timestamp, ByteBuffer key, ByteBuffer value, Header[] headers, Thunk thunk) {
+        if(wouldExceedMaxTimestampDelta(timestamp)) {
+            log.info("while splitting maxBatchTimestampDifferenceMs {} ms would be exceeded",
+                    maxBatchTimestampDifferenceMs);
+            return false;
+        }
         if (!recordsBuilder.hasRoomFor(timestamp, key, value, headers)) {
             return false;
         } else {
@@ -347,7 +379,7 @@ public final class ProducerBatch {
         // with how normal batches are handled).
         MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, magic(), recordsBuilder.compressionType(),
                 TimestampType.CREATE_TIME, 0L);
-        return new ProducerBatch(topicPartition, builder, this.createdMs, true);
+        return new ProducerBatch(topicPartition, builder, this.createdMs, true, maxBatchTimestampDifferenceMs);
     }
 
     public boolean isCompressed() {

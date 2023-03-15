@@ -156,7 +156,7 @@ public abstract class MirrorConnectorConfig extends AbstractConfig {
         result.putAll(Utils.entriesWithPrefix(props, CONSUMER_CLIENT_PREFIX));
         result.putAll(Utils.entriesWithPrefix(props, SOURCE_PREFIX + CONSUMER_CLIENT_PREFIX));
         result.put(ENABLE_AUTO_COMMIT_CONFIG, "false");
-        result.putIfAbsent(AUTO_OFFSET_RESET_CONFIG, "earliest");
+        result.putIfAbsent(AUTO_OFFSET_RESET_CONFIG, "latest");
         return result;
     }
 

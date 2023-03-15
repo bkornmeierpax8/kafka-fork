@@ -162,8 +162,6 @@ public class MirrorSourceTask extends SourceTask {
                 ConsumerRecords<byte[], byte[]> records = consumer.poll(pollTimeout);
                 sourceRecords = new ArrayList<>(records.count());
                 for (ConsumerRecord<byte[], byte[]> record : records) {
-                    minTimestamp = Long.min(record.timestamp(), minTimestamp);
-                    maxTimestamp = Long.max(record.timestamp(), maxTimestamp);
                     sourceRecords.add(record);
                 }
             } else {
@@ -171,6 +169,11 @@ public class MirrorSourceTask extends SourceTask {
                 sourceRecords = new ArrayList<>(previousBatch.size());
                 sourceRecords.addAll(previousBatch);
                 previousBatch.clear();
+            }
+            // find the min and max timestamps in the batch.
+            for(ConsumerRecord<byte[], byte[]> record : sourceRecords) {
+                minTimestamp = Long.min(record.timestamp(), minTimestamp);
+                maxTimestamp = Long.max(record.timestamp(), maxTimestamp);
             }
 
             final long timestampDiff = maxTimestamp - minTimestamp;
@@ -185,7 +188,9 @@ public class MirrorSourceTask extends SourceTask {
                     .collect(Collectors.partitioningBy(record -> record.timestamp() >= noGreaterThan));
             List<ConsumerRecord<byte[], byte[]>> inBatch = split.get(false);
             List<ConsumerRecord<byte[], byte[]>> outOfBatch = split.get(true);
-            log.info(String.format("Batch contains %d records, %d records are out of batch.", inBatch.size(), outOfBatch.size()));
+            if(!outOfBatch.isEmpty()) {
+                log.info(String.format("Batch would exceed 'max.timestamp.difference.ms'. Batch contains %d records, %d records are out of batch.", inBatch.size(), outOfBatch.size()));
+            }
             // if there are records that are out of the batch, add them to the previous batch.
             if(outOfBatch != null && !outOfBatch.isEmpty()) {
                 // push records that exceed the max time into the previous batch
