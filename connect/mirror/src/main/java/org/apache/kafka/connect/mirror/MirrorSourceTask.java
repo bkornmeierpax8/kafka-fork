@@ -53,14 +53,12 @@ public class MirrorSourceTask extends SourceTask {
     private static final Logger log = LoggerFactory.getLogger(MirrorSourceTask.class);
 
     private static final int MAX_OUTSTANDING_OFFSET_SYNCS = 10;
-    private final ArrayList<ConsumerRecord<byte[], byte[]>> previousBatch = new ArrayList<>();
 
     private KafkaConsumer<byte[], byte[]> consumer;
     private KafkaProducer<byte[], byte[]> offsetProducer;
     private String sourceClusterAlias;
     private String offsetSyncsTopic;
     private Duration pollTimeout;
-    private long maxTimestampDifference; //= 172800000;
     private long maxOffsetLag;
     private Map<TopicPartition, PartitionState> partitionStates;
     private ReplicationPolicy replicationPolicy;
@@ -98,7 +96,6 @@ public class MirrorSourceTask extends SourceTask {
         sourceClusterAlias = config.sourceClusterAlias();
         metrics = config.metrics();
         pollTimeout = config.consumerPollTimeout();
-        maxTimestampDifference = config.maxTimestampDifference();
         maxOffsetLag = config.maxOffsetLag();
         replicationPolicy = config.replicationPolicy();
         partitionStates = new HashMap<>();
@@ -153,54 +150,21 @@ public class MirrorSourceTask extends SourceTask {
             return null;
         }
         try {
-            List<ConsumerRecord<byte[], byte[]>> sourceRecords;
-            long minTimestamp = Long.MAX_VALUE;
-            long maxTimestamp = 0;
-            // we do some splitting based on timestamp, so we need to make sure we have all the records
-            if(previousBatch.isEmpty()) {
-                // if no records left in previous batch, poll for more.
-                ConsumerRecords<byte[], byte[]> records = consumer.poll(pollTimeout);
-                sourceRecords = new ArrayList<>(records.count());
-                for (ConsumerRecord<byte[], byte[]> record : records) {
-                    sourceRecords.add(record);
-                }
-            } else {
-                // copy all records out of previous batch, and clear previous batch.
-                sourceRecords = new ArrayList<>(previousBatch.size());
-                sourceRecords.addAll(previousBatch);
-                previousBatch.clear();
+            ConsumerRecords<byte[], byte[]> records = consumer.poll(pollTimeout);
+            List<SourceRecord> sourceRecords = new ArrayList<>(records.count());
+            for (ConsumerRecord<byte[], byte[]> record : records) {
+                SourceRecord converted = convertRecord(record);
+                sourceRecords.add(converted);
+                TopicPartition topicPartition = new TopicPartition(converted.topic(), converted.kafkaPartition());
+                metrics.recordAge(topicPartition, System.currentTimeMillis() - record.timestamp());
+                metrics.recordBytes(topicPartition, byteSize(record.value()));
             }
-            // find the min and max timestamps in the batch.
-            for(ConsumerRecord<byte[], byte[]> record : sourceRecords) {
-                minTimestamp = Long.min(record.timestamp(), minTimestamp);
-                maxTimestamp = Long.max(record.timestamp(), maxTimestamp);
-            }
-
-            final long timestampDiff = maxTimestamp - minTimestamp;
-
-            if(timestampDiff >= maxTimestampDifference) {
-                log.info("Timestamp difference is greater than MAX_TIMESTAMP_DIFFERENCE days, splitting batch...");
-            }
-            final long noGreaterThan = minTimestamp + maxTimestampDifference;
-            // partition records into those that are within the max time difference, and those that are not.
-            Map<Boolean, List<ConsumerRecord<byte[], byte[]>>> split = sourceRecords
-                    .stream()
-                    .collect(Collectors.partitioningBy(record -> record.timestamp() >= noGreaterThan));
-            List<ConsumerRecord<byte[], byte[]>> inBatch = split.get(false);
-            List<ConsumerRecord<byte[], byte[]>> outOfBatch = split.get(true);
-            if(!outOfBatch.isEmpty()) {
-                log.info(String.format("Batch would exceed 'max.timestamp.difference.ms'. Batch contains %d records, %d records are out of batch.", inBatch.size(), outOfBatch.size()));
-            }
-            // if there are records that are out of the batch, add them to the previous batch.
-            if(outOfBatch != null && !outOfBatch.isEmpty()) {
-                // push records that exceed the max time into the previous batch
-                previousBatch.addAll(outOfBatch);
-            }
-
-            if(inBatch != null && !inBatch.isEmpty()) {
-                return inBatch.stream().map(record -> convertRecord(record)).collect(Collectors.toList());
-            } else {
+            if (sourceRecords.isEmpty()) {
+                // WorkerSourceTasks expects non-zero batch size
                 return null;
+            } else {
+                log.trace("Polled {} records from {}.", sourceRecords.size(), records.partitions());
+                return sourceRecords;
             }
         } catch (WakeupException e) {
             return null;
