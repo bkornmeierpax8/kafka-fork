@@ -56,6 +56,9 @@ public class MirrorSourceConfig extends MirrorConnectorConfig {
 
     static final String TASK_TOPIC_PARTITIONS = "task.assigned.partitions";
 
+    private static final String MAX_TIMESTAMP_DIFFERENCE_MILLIS_DOC = "Maximum difference in timestamps between upstream and downstream records.";
+    public static final String MAX_TIMESTAMP_DIFFERENCE_MILLIS = "max.timestamp.difference.ms";
+    public static final long MAX_TIMESTAMP_DIFFERENCE_MILLIS_DEFAULT = Duration.ofHours(24).toMillis();
     public static final String CONSUMER_POLL_TIMEOUT_MILLIS = "consumer.poll.timeout.ms";
     private static final String CONSUMER_POLL_TIMEOUT_MILLIS_DOC = "Timeout when polling source cluster.";
     public static final long CONSUMER_POLL_TIMEOUT_MILLIS_DEFAULT = 1000L;
@@ -195,6 +198,10 @@ public class MirrorSourceConfig extends MirrorConnectorConfig {
         return Duration.ofMillis(getLong(CONSUMER_POLL_TIMEOUT_MILLIS));
     }
 
+    long maxTimestampDifference() {
+        return getLong(MAX_TIMESTAMP_DIFFERENCE_MILLIS);
+    }
+
     protected static final ConfigDef CONNECTOR_CONFIG_DEF = new ConfigDef(BASE_CONNECTOR_CONFIG_DEF)
             .define(
                     TOPICS,
@@ -304,7 +311,12 @@ public class MirrorSourceConfig extends MirrorConnectorConfig {
                     OFFSET_SYNCS_TOPIC_LOCATION_DEFAULT,
                     ConfigDef.ValidString.in(SOURCE_CLUSTER_ALIAS_DEFAULT, TARGET_CLUSTER_ALIAS_DEFAULT),
                     ConfigDef.Importance.LOW,
-                    OFFSET_SYNCS_TOPIC_LOCATION_DOC);
+                    OFFSET_SYNCS_TOPIC_LOCATION_DOC)
+            .define(MAX_TIMESTAMP_DIFFERENCE_MILLIS,
+                    ConfigDef.Type.LONG,
+                    MAX_TIMESTAMP_DIFFERENCE_MILLIS_DEFAULT,
+                    ConfigDef.Importance.LOW,
+                    MAX_TIMESTAMP_DIFFERENCE_MILLIS_DOC);
 
     public static void main(String[] args) {
         System.out.println(CONNECTOR_CONFIG_DEF.toHtml(4, config -> "mirror_source_" + config));

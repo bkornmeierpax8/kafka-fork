@@ -793,7 +793,6 @@ public final class Utils {
      */
     @SafeVarargs
     public static <T extends Comparable<T>> SortedSet<T> mkSortedSet(T... elems) {
-        this.getClass().getResourceAsStream()
         SortedSet<T> result = new TreeSet<>();
         for (T elem : elems)
             result.add(elem);

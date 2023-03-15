@@ -55,13 +55,12 @@ public class MirrorSourceTask extends SourceTask {
     private static final int MAX_OUTSTANDING_OFFSET_SYNCS = 10;
     private final ArrayList<ConsumerRecord<byte[], byte[]>> previousBatch = new ArrayList<>();
 
-    private static final long MAX_TIMESTAMP_DIFFERENCE = 172800000;
-
     private KafkaConsumer<byte[], byte[]> consumer;
     private KafkaProducer<byte[], byte[]> offsetProducer;
     private String sourceClusterAlias;
     private String offsetSyncsTopic;
     private Duration pollTimeout;
+    private long maxTimestampDifference; //= 172800000;
     private long maxOffsetLag;
     private Map<TopicPartition, PartitionState> partitionStates;
     private ReplicationPolicy replicationPolicy;
@@ -99,6 +98,7 @@ public class MirrorSourceTask extends SourceTask {
         sourceClusterAlias = config.sourceClusterAlias();
         metrics = config.metrics();
         pollTimeout = config.consumerPollTimeout();
+        maxTimestampDifference = config.maxTimestampDifference();
         maxOffsetLag = config.maxOffsetLag();
         replicationPolicy = config.replicationPolicy();
         partitionStates = new HashMap<>();
@@ -175,16 +175,17 @@ public class MirrorSourceTask extends SourceTask {
 
             final long timestampDiff = maxTimestamp - minTimestamp;
 
-            if(timestampDiff >= MAX_TIMESTAMP_DIFFERENCE) {
+            if(timestampDiff >= maxTimestampDifference) {
                 log.info("Timestamp difference is greater than MAX_TIMESTAMP_DIFFERENCE days, splitting batch...");
             }
-            final long noGreaterThan = minTimestamp + MAX_TIMESTAMP_DIFFERENCE;
+            final long noGreaterThan = minTimestamp + maxTimestampDifference;
             // partition records into those that are within the max time difference, and those that are not.
             Map<Boolean, List<ConsumerRecord<byte[], byte[]>>> split = sourceRecords
                     .stream()
                     .collect(Collectors.partitioningBy(record -> record.timestamp() >= noGreaterThan));
             List<ConsumerRecord<byte[], byte[]>> inBatch = split.get(false);
             List<ConsumerRecord<byte[], byte[]>> outOfBatch = split.get(true);
+            log.info(String.format("Batch contains %d records, %d records are out of batch.", inBatch.size(), outOfBatch.size()));
             // if there are records that are out of the batch, add them to the previous batch.
             if(outOfBatch != null && !outOfBatch.isEmpty()) {
                 // push records that exceed the max time into the previous batch
