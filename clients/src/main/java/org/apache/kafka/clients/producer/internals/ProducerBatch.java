@@ -83,6 +83,10 @@ public final class ProducerBatch {
     private boolean retry;
     private boolean reopened;
 
+    public ProducerBatch(TopicPartition tp, MemoryRecordsBuilder recordsBuilder, long createdMs) {
+        this(tp, recordsBuilder, createdMs, false, Long.MAX_VALUE);
+    }
+
     public ProducerBatch(TopicPartition tp, MemoryRecordsBuilder recordsBuilder, long createdMs, long maxBatchTimestampDifferenceMs) {
         this(tp, recordsBuilder, createdMs, false, maxBatchTimestampDifferenceMs);
     }
@@ -114,7 +118,13 @@ public final class ProducerBatch {
         maxTimestamp = Math.max(maxTimestamp, timestamp);
         minTimestamp = minTimestamp == RecordBatch.NO_TIMESTAMP ? timestamp : Math.min(minTimestamp, timestamp);
         final long timestampDelta = maxTimestamp - minTimestamp;
-        return timestampDelta >= maxBatchTimestampDifferenceMs;
+
+        boolean deltaToLarge = timestampDelta >= maxBatchTimestampDifferenceMs;
+        if(deltaToLarge) {
+            log.info("maxBatchTimestampDifferenceMs {} ms would be exceeded, splitting batch [timestamp={}, minTimestamp={}, maxTimestamp={}]",
+                    maxBatchTimestampDifferenceMs, timestamp, minTimestamp, maxTimestamp);
+        }
+        return deltaToLarge;
     }
 
     /**
@@ -125,8 +135,6 @@ public final class ProducerBatch {
     public FutureRecordMetadata tryAppend(long timestamp, byte[] key, byte[] value, Header[] headers, Callback callback, long now) {
         // We need to check the timestamp difference before appending the record to the batch, if the difference would be too large we return null, to start a new batch
         if(wouldExceedMaxTimestampDelta(timestamp)) {
-            log.info("maxBatchTimestampDifferenceMs {} ms would be exceeded, splitting batch",
-                    maxBatchTimestampDifferenceMs);
             return null;
         }
 
@@ -156,8 +164,6 @@ public final class ProducerBatch {
      */
     private boolean tryAppendForSplit(long timestamp, ByteBuffer key, ByteBuffer value, Header[] headers, Thunk thunk) {
         if(wouldExceedMaxTimestampDelta(timestamp)) {
-            log.info("while splitting maxBatchTimestampDifferenceMs {} ms would be exceeded",
-                    maxBatchTimestampDifferenceMs);
             return false;
         }
         if (!recordsBuilder.hasRoomFor(timestamp, key, value, headers)) {

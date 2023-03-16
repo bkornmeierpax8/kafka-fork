@@ -178,8 +178,8 @@ public class RecordAccumulator {
                              Time time,
                              ApiVersions apiVersions,
                              TransactionManager transactionManager,
-                             BufferPool bufferPool,
-                             long maxBatchTimestampDifferenceMs) {
+                             BufferPool bufferPool
+                             ) {
         this(logContext,
             batchSize,
             compression,
@@ -193,7 +193,7 @@ public class RecordAccumulator {
             apiVersions,
             transactionManager,
             bufferPool,
-            maxBatchTimestampDifferenceMs);
+            Long.MAX_VALUE);
     }
 
     private void registerMetrics(Metrics metrics, String metricGrpName) {

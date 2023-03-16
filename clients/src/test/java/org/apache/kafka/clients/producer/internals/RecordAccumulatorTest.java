@@ -846,7 +846,7 @@ public class RecordAccumulatorTest {
         // Create a big batch
         ByteBuffer buffer = ByteBuffer.allocate(4096);
         MemoryRecordsBuilder builder = MemoryRecords.builder(buffer, CompressionType.NONE, TimestampType.CREATE_TIME, 0L);
-        ProducerBatch batch = new ProducerBatch(tp1, builder, now, true);
+        ProducerBatch batch = new ProducerBatch(tp1, builder, now, true, Long.MAX_VALUE);
 
         byte[] value = new byte[1024];
         final AtomicInteger acked = new AtomicInteger(0);
@@ -1166,7 +1166,7 @@ public class RecordAccumulatorTest {
             int batchSize = 128;
             RecordAccumulator accum = new RecordAccumulator(logContext, batchSize, CompressionType.NONE, 0, 0L,
                 3200, config, metrics, "producer-metrics", time, new ApiVersions(), null,
-                new BufferPool(totalSize, batchSize, metrics, time, "producer-internal-metrics"));
+                new BufferPool(totalSize, batchSize, metrics, time, "producer-internal-metrics"), Long.MAX_VALUE);
 
             byte[] largeValue = new byte[batchSize];
             int[] queueSizes = {1, 7, 2};
