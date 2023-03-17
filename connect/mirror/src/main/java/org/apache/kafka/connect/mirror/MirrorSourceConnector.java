@@ -510,6 +510,11 @@ public class MirrorSourceConnector extends SourceConnector {
             .filter(x -> x.source() != ConfigEntry.ConfigSource.STATIC_BROKER_CONFIG)
             .filter(x -> shouldReplicateTopicConfigurationProperty(x.name()))
             .collect(Collectors.toList());
+        entries.add(
+                new ConfigEntry(
+                        org.apache.kafka.common.config.TopicConfig.MESSAGE_TIMESTAMP_DIFFERENCE_MAX_MS_CONFIG,
+                        Long.toString(Long.MAX_VALUE)));
+        log.info("Syncing topic configuration for {} properties.", entries.size());
         return new Config(entries);
     }
 

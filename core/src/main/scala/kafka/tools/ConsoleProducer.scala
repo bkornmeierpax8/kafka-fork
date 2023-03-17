@@ -356,12 +356,20 @@ object ConsoleProducer {
           val key = parse(parseKey, line, headerOffset, keySeparator, "key separator")
           val keyOffset = if (key == null) 0 else key.length + keySeparator.length
 
-          val value = line.substring(headerOffset + keyOffset)
+          val timestampStr = parse(parseKey, line, keyOffset, keySeparator, "time separator")
+          val timestampOffset = if (key == null) 0 else timestampStr.length + keySeparator.length
+          val timestamp: java.lang.Long = if (timestampStr == null) null else java.lang.Long.parseLong(timestampStr)
+
+          val value = line.substring(headerOffset + keyOffset + timestampOffset)
+
+          println(s"sending key: $key, value: $value, timestamp: $timestamp")
 
           val record = new ProducerRecord[Array[Byte], Array[Byte]](
             topic,
+            null,
+            timestamp,
             if (key != null && key != nullMarker) key.getBytes(StandardCharsets.UTF_8) else null,
-            if (value != null && value != nullMarker) value.getBytes(StandardCharsets.UTF_8) else null,
+            if (value != null && value != nullMarker) value.getBytes(StandardCharsets.UTF_8) else null
           )
 
           if (headers != null && headers != nullMarker) {
