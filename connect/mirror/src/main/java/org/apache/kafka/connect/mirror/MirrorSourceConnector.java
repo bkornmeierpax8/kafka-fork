@@ -83,6 +83,7 @@ public class MirrorSourceConnector extends SourceConnector {
     private SourceAndTarget sourceAndTarget;
     private String connectorName;
     private TopicFilter topicFilter;
+    private List<ConfigEntry> targetTopicConfigAppend;
     private ConfigPropertyFilter configPropertyFilter;
     private List<TopicPartition> knownSourceTopicPartitions = Collections.emptyList();
     private List<TopicPartition> knownTargetTopicPartitions = Collections.emptyList();
@@ -121,6 +122,13 @@ public class MirrorSourceConnector extends SourceConnector {
         connectorName = config.connectorName();
         sourceAndTarget = new SourceAndTarget(config.sourceClusterAlias(), config.targetClusterAlias());
         topicFilter = config.topicFilter();
+        targetTopicConfigAppend = config.targetTopicConfigAppend().stream().map(raw -> {
+            String[] parts = raw.split("=");
+            if (parts.length != 2) {
+                throw new IllegalArgumentException("Invalid target topic config: " + raw);
+            }
+            return new ConfigEntry(parts[0], parts[1]);
+        }).collect(Collectors.toList());
         configPropertyFilter = config.configPropertyFilter();
         replicationPolicy = config.replicationPolicy();
         replicationFactor = config.replicationFactor();
@@ -510,11 +518,9 @@ public class MirrorSourceConnector extends SourceConnector {
             .filter(x -> x.source() != ConfigEntry.ConfigSource.STATIC_BROKER_CONFIG)
             .filter(x -> shouldReplicateTopicConfigurationProperty(x.name()))
             .collect(Collectors.toList());
-        entries.add(
-                new ConfigEntry(
-                        org.apache.kafka.common.config.TopicConfig.MESSAGE_TIMESTAMP_DIFFERENCE_MAX_MS_CONFIG,
-                        Long.toString(Long.MAX_VALUE)));
-        log.info("Syncing topic configuration for {} properties.", entries.size());
+        if(entries.addAll(targetTopicConfigAppend)) {
+            log.debug("Additional properties appended to target topic config. [appended={}, entries={}", targetTopicConfigAppend, entries);
+        }
         return new Config(entries);
     }
 

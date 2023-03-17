@@ -90,6 +90,12 @@ public class MirrorSourceConfig extends MirrorConnectorConfig {
     private static final String OFFSET_LAG_MAX_DOC = "How out-of-sync a remote partition can be before it is resynced.";
     public static final long OFFSET_LAG_MAX_DEFAULT = 100L;
 
+    public static final String TARGET_TOPIC_CONFIG_APPEND = "target.topic.config.append";
+    public static final String TARGET_TOPIC_CONFIG_APPEND_DOC = "Additional topic config properties to append to target topics.";
+    public static final List<String> TARGET_TOPIC_CONFIG_APPEND_DEFAULT = java.util.Collections.singletonList(
+            String.format("%s=%s", org.apache.kafka.common.config.TopicConfig.MESSAGE_TIMESTAMP_DIFFERENCE_MAX_MS_CONFIG, Long.toString(Long.MAX_VALUE))
+    );
+
     public MirrorSourceConfig(Map<String, String> props) {
         super(CONNECTOR_CONFIG_DEF, ConfigUtils.translateDeprecatedConfigs(props, new String[][]{
                 {TOPICS_EXCLUDE, TOPICS_EXCLUDE_ALIAS},
@@ -185,6 +191,10 @@ public class MirrorSourceConfig extends MirrorConnectorConfig {
 
     TopicFilter topicFilter() {
         return getConfiguredInstance(TOPIC_FILTER_CLASS, TopicFilter.class);
+    }
+
+    List<String> targetTopicConfigAppend() {
+        return getList(TARGET_TOPIC_CONFIG_APPEND);
     }
 
     ConfigPropertyFilter configPropertyFilter() {
@@ -304,7 +314,12 @@ public class MirrorSourceConfig extends MirrorConnectorConfig {
                     OFFSET_SYNCS_TOPIC_LOCATION_DEFAULT,
                     ConfigDef.ValidString.in(SOURCE_CLUSTER_ALIAS_DEFAULT, TARGET_CLUSTER_ALIAS_DEFAULT),
                     ConfigDef.Importance.LOW,
-                    OFFSET_SYNCS_TOPIC_LOCATION_DOC);
+                    OFFSET_SYNCS_TOPIC_LOCATION_DOC)
+            .define(TARGET_TOPIC_CONFIG_APPEND,
+                    ConfigDef.Type.LIST,
+                    TARGET_TOPIC_CONFIG_APPEND_DEFAULT,
+                    ConfigDef.Importance.LOW,
+                    TARGET_TOPIC_CONFIG_APPEND_DOC);
 
     public static void main(String[] args) {
         System.out.println(CONNECTOR_CONFIG_DEF.toHtml(4, config -> "mirror_source_" + config));
