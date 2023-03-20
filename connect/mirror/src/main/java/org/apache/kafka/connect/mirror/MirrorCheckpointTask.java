@@ -266,7 +266,9 @@ public class MirrorCheckpointTask extends SourceTask {
         Map<String, Map<TopicPartition, OffsetAndMetadata>> offsetToSyncAll = new HashMap<>();
 
         // first, sync offsets for the idle consumers at target
-        for (Entry<String, Map<TopicPartition, OffsetAndMetadata>> group : getConvertedUpstreamOffset().entrySet()) {
+        Set<Map.Entry<String, Map<TopicPartition, OffsetAndMetadata>>> groupsToOffsetMap = getConvertedUpstreamOffset().entrySet();
+        log.info("Syncing offsets for {} consumer groups.", groupsToOffsetMap);
+        for (Entry<String, Map<TopicPartition, OffsetAndMetadata>> group : groupsToOffsetMap) {
             String consumerGroupId = group.getKey();
             // for each idle consumer at target, read the checkpoints (converted upstream offset)
             // from the pre-populated map
